@@ -28,7 +28,7 @@ namespace VideolandAssignment.Managers
             var updatedShowIds = await GetUpdatedShowIds();
             var lastUpdatedTime = await GetLastUpdatedTime();
 
-            var toBeUpdated = updatedShowIds.Where(ts => ts.Value > lastUpdatedTime).Select(ts => ts.Key);
+            var toBeUpdated = updatedShowIds.Where(ts => (ts.Value > lastUpdatedTime && ts.Key <= MaxShowId)).Select(ts => ts.Key);
             // Getting all shows is quick enough to not need to be optimized to only get the new ones.
             var showDtos = await ShowsClient.GetAllShows();
 
@@ -41,7 +41,7 @@ namespace VideolandAssignment.Managers
                     maxIdInStorage = await context.Shows.MaxAsync(s => s.Id);
                 }
 
-                foreach (var dto in showDtos)
+                foreach (var dto in showDtos.Where(dto => dto.Id <= MaxShowId))
                 {
                     // Only add shows not yet storage
                     if (dto.Id > maxIdInStorage)
@@ -56,7 +56,7 @@ namespace VideolandAssignment.Managers
 
                 await context.Shows.AddRangeAsync(Shows);
 
-                List<Person> peopleAlreadyInStorage = await context.Persons.ToListAsync();
+                List<Person> peopleAlreadyInStorage = await context.Persons.AsNoTracking().ToListAsync();
 
                 Dictionary<long, Person> personsDictionary = new Dictionary<long, Person>();
 
@@ -97,6 +97,10 @@ namespace VideolandAssignment.Managers
                 {
                     InsertOrUpdateShowPerson(showPerson, context);
                 }
+
+
+                var lastTimeStamp = updatedShowIds.Values.Max();
+                InsertOrUpdateTimeStamp(lastTimeStamp, context);
                 await context.SaveChangesAsync();
             }
         }
@@ -134,7 +138,7 @@ namespace VideolandAssignment.Managers
 
         private async void InsertOrUpdatePerson(Person person, VideolandAssignmentContext context)
         {
-            if ( await context.Persons.FirstOrDefaultAsync(p => p.Id == person.Id) != null)
+            if ( await context.Persons.AsNoTracking().FirstOrDefaultAsync(p => p.Id == person.Id) != null)
             {
                 context.Persons.Update(person);
             }
@@ -146,7 +150,7 @@ namespace VideolandAssignment.Managers
 
         private async void InsertOrUpdateShowPerson(ShowPerson showPerson, VideolandAssignmentContext context)
         {
-            if (await context.ShowPersons.FirstOrDefaultAsync(sp => sp.PersonId == showPerson.PersonId && sp.ShowId == showPerson.ShowId) != null) {
+            if (await context.ShowPersons.AsNoTracking().FirstOrDefaultAsync(sp => sp.PersonId == showPerson.PersonId && sp.ShowId == showPerson.ShowId) != null) {
                 // nothing needs to happen as the keys are the only information the entity has and nothing can be updated
             }
             else
@@ -155,27 +159,28 @@ namespace VideolandAssignment.Managers
             }
         }
 
+        private async void InsertOrUpdateTimeStamp(long unixTime, VideolandAssignmentContext context)
+        {
+            var timeStamp = await context.UnixTimeStamps.FirstOrDefaultAsync(ts => ts.Id == LastUpdatedTimeStampName);
+            if (timeStamp != null)
+            {
+                timeStamp.TimeStamp = unixTime;
+            }
+            else
+            {
+                timeStamp = new UnixTimeStamp()
+                {
+                    Id = LastUpdatedTimeStampName,
+                    TimeStamp = unixTime
+                };
+                context.UnixTimeStamps.Add(timeStamp);
+            }
+
+        }
+
         private async Task<Dictionary<int, long>> GetUpdatedShowIds()
         {
             return await ShowsClient.GetUpdates();
-        }
-
-        public async void test()
-        {
-            using (var context = new VideolandAssignmentContext())
-            {
-            }
-        }
-
-
-        private async Task<bool> UpdateShow(ShowDTO showDto)
-        {
-            using (var context = new VideolandAssignmentContext())
-            {
-
-            }
-
-            return true;
         }
 
 
